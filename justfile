@@ -19,6 +19,10 @@ test:
 build:
     CGO_ENABLED=0 go build -trimpath -o geki .
 
+# delete local build artifacts
+clean:
+    rm -f geki
+
 # --- local / server-direct (run on the machine that will run the bot) ---
 
 # first-time install on this host: binary + env file + unit, then enable & start
