@@ -1,0 +1,17 @@
+[Unit]
+Description=Geki Discord bot
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+EnvironmentFile=/etc/geki.env
+ExecStart=/usr/local/bin/geki
+WorkingDirectory=/var/lib/geki
+Restart=on-failure
+RestartSec=5
+# Run as an unprivileged transient user; servers.json lives in /var/lib/geki.
+DynamicUser=yes
+StateDirectory=geki
+
+[Install]
+WantedBy=multi-user.target

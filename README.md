@@ -27,10 +27,39 @@ e.g. `!geki set madge https://cdn.7tv.app/emote/01F6ASPNM00009TPCEMWQTT4XX/4x.pn
 
 Whitelists and overrides live per-guild in `servers.json`. Use the account's Discord username (handle), not its display name.
 
-## Run
+## Run (local dev)
 
 ```sh
 go run .            # needs DISCORD_TOKEN in the environment
+```
+
+## Deploy (systemd)
+
+Uses [`just`](https://github.com/casey/just). The token is the only manual input; everything else lives in `justfile`, `geki.service`, and `deploy/remote-install.sh` (version-controlled). The bot runs as an unprivileged transient user (`DynamicUser`); `servers.json` persists in `/var/lib/geki`. Install/deploy abort if the target isn't running systemd.
+
+**On the server directly** (needs `just` + Go on that host):
+
+```sh
+DISCORD_TOKEN=your-token just install   # build, write /etc/geki.env (0600), install unit, enable + start
+just deploy        # rebuild + restart after a code change (token/unit untouched)
+```
+
+**From your workstation, over SSH** (cross-builds here, installs on the remote):
+
+```sh
+DISCORD_TOKEN=your-token just deploy-remote        # first time: prompts for a host from ~/.ssh/config
+just deploy-remote my-server                        # or name the host directly
+```
+
+`deploy-remote` detects the remote's CPU arch, cross-compiles, and installs it. The token is sent only on the first deploy (when `/etc/geki.env` doesn't exist yet) and never stored in the repo. Needs SSH access with `sudo` on the remote.
+
+Other recipes (operate on this host; for a remote, `ssh` in and run them there):
+
+```sh
+just set-token     # rotate the token from $DISCORD_TOKEN
+just logs          # follow journald output
+just status        # service status
+just uninstall     # remove service + binary (keeps token file and state)
 ```
 
 ## Discord setup
