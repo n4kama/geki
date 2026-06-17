@@ -3,13 +3,13 @@
 Discord bot that replaces `:keyword:` tags in chat with inline emotes (animated gif / static png).
 
 - Scans every message for `:keyword:` tags (case-insensitive, letters/numbers only), anywhere in the text.
-- Resolves each keyword via `emotes.json`, falling back to a [7TV](https://7tv.app) search (most-popular exact match) cached back into `emotes.json`.
-- Uploads each emote once as an **application emoji** and reuses it across servers/restarts.
+- Resolves each keyword via a [7TV](https://7tv.app) search (most-popular exact match).
+- Uploads each emote once as an **application emoji** and reuses it across servers/restarts (this is also the cache — no separate emote file).
 - Reposts the message through a webhook (sender's name + avatar) with the tags swapped for real inline emojis; surrounding text is kept. Unknown tags are left untouched.
 
 ## Per-server overrides
 
-Default emotes (from 7TV, cached in `emotes.json`) are **global**. A server can override what a keyword resolves to **for that server only**:
+Default emotes (the most-popular 7TV exact match) are **global**. A server can override what a keyword resolves to **for that server only**:
 
 ```
 !geki set <name> <https-png-or-gif-url>

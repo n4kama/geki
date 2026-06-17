@@ -1,4 +1,4 @@
-// Geki — replaces :keyword: chat messages with a gif/png link Discord embeds.
+// Geki — replaces :keyword: tags in chat messages with inline Discord emotes.
 package main
 
 import (
@@ -24,7 +24,6 @@ import (
 )
 
 const (
-	dbPath      = "emotes.json"
 	serversPath = "servers.json"
 	webhookName = "Geki"
 	cmdPrefix   = "!geki" // !geki set <name> <https-url> / !geki allow <username>
@@ -48,9 +47,6 @@ type override struct {
 }
 
 var (
-	mu     sync.Mutex // ponytail: global lock; a chat bot's throughput never needs finer
-	emotes map[string]string
-
 	whMu     sync.Mutex
 	webhooks = map[string][2]string{} // channelID -> {webhookID, token}
 
@@ -97,50 +93,6 @@ func replaceTags(content string, resolve func(kw string) (string, bool)) (string
 		return tag
 	})
 	return out, changed
-}
-
-func loadDB() {
-	b, err := os.ReadFile(dbPath)
-	if err != nil {
-		log.Fatalf("read %s: %v", dbPath, err)
-	}
-	raw := map[string]string{}
-	if err := json.Unmarshal(b, &raw); err != nil {
-		log.Fatalf("parse %s: %v", dbPath, err)
-	}
-	emotes = make(map[string]string, len(raw))
-	for k, v := range raw {
-		emotes[strings.ToLower(k)] = v
-	}
-}
-
-// saveDB persists the map. Caller holds mu.
-func saveDB() {
-	b, _ := json.MarshalIndent(emotes, "", "  ")
-	if err := os.WriteFile(dbPath, b, 0o644); err != nil {
-		log.Printf("save %s: %v", dbPath, err)
-	}
-}
-
-// lookup resolves a keyword to a URL, falling back to 7TV and caching the result.
-func lookup(kw string) string {
-	mu.Lock()
-	url, ok := emotes[kw]
-	mu.Unlock()
-	if ok {
-		return url
-	}
-
-	url = search7TV(kw)
-	if url == "" {
-		return ""
-	}
-
-	mu.Lock()
-	emotes[kw] = url
-	saveDB()
-	mu.Unlock()
-	return url
 }
 
 type emoteFile struct {
@@ -221,7 +173,7 @@ func emojiTag(s *discordgo.Session, guildID, kw string) (string, bool) {
 	e, ok := appEmojis[kw]
 	emMu.Unlock()
 	if !ok {
-		url := lookup(kw)
+		url := search7TV(kw)
 		if url == "" {
 			return "", false
 		}
@@ -586,7 +538,6 @@ func main() {
 	if token == "" {
 		log.Fatal("set DISCORD_TOKEN")
 	}
-	loadDB()
 	loadServers()
 
 	dg, err := discordgo.New("Bot " + token)
