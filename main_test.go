@@ -6,7 +6,26 @@ import (
 	"regexp"
 	"strings"
 	"testing"
+
+	"github.com/bwmarrin/discordgo"
 )
+
+func TestReplyPrefix(t *testing.T) {
+	// not a reply → empty
+	if got := replyPrefix(&discordgo.MessageCreate{Message: &discordgo.Message{}}); got != "" {
+		t.Errorf("non-reply should be empty, got %q", got)
+	}
+	// reply with a known referenced author → subtext line + jump link
+	m := &discordgo.MessageCreate{Message: &discordgo.Message{
+		ChannelID:         "C",
+		MessageReference:  &discordgo.MessageReference{MessageID: "M", ChannelID: "C", GuildID: "G"},
+		ReferencedMessage: &discordgo.Message{Author: &discordgo.User{Username: "bob"}},
+	}}
+	want := "-# ↪ [replying to @bob](https://discord.com/channels/G/C/M)\n"
+	if got := replyPrefix(m); got != want {
+		t.Errorf("replyPrefix = %q, want %q", got, want)
+	}
+}
 
 func TestReplaceTags(t *testing.T) {
 	// Fake resolver: only "kappa" and "madge" exist; kappa is animated.

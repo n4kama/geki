@@ -475,8 +475,8 @@ func onMessage(s *discordgo.Session, m *discordgo.MessageCreate) {
 		return
 	}
 	if _, err := s.WebhookExecute(id, token, false, &discordgo.WebhookParams{
-		Content:   content,
-		Username:  displayName(m),
+		Content:   replyPrefix(m) + content,
+		Username:  displayName(m.Message),
 		AvatarURL: m.Author.AvatarURL("128"),
 	}); err != nil {
 		reportErr(s, m.ChannelID, "could not post message", err)
@@ -489,15 +489,39 @@ func reportErr(s *discordgo.Session, channelID, what string, err error) {
 	s.ChannelMessageSend(channelID, "⚠️ Geki: "+what+": "+err.Error())
 }
 
-func displayName(m *discordgo.MessageCreate) string {
+func displayName(m *discordgo.Message) string {
 	switch {
 	case m.Member != nil && m.Member.Nick != "":
 		return m.Member.Nick // server nickname
-	case m.Author.GlobalName != "":
+	case m.Author != nil && m.Author.GlobalName != "":
 		return m.Author.GlobalName
-	default:
+	case m.Author != nil:
 		return m.Author.Username
+	default:
+		return "someone"
 	}
+}
+
+// replyPrefix mimics Discord's reply bar with a subtext line + jump link back to
+// the original. Webhooks can't post native replies, so this is the closest we get.
+// Empty when the message isn't a reply.
+func replyPrefix(m *discordgo.MessageCreate) string {
+	r := m.MessageReference
+	if r == nil || r.MessageID == "" {
+		return ""
+	}
+	gid, cid := r.GuildID, r.ChannelID
+	if gid == "" {
+		gid = m.GuildID
+	}
+	if cid == "" {
+		cid = m.ChannelID
+	}
+	who := "a message"
+	if m.ReferencedMessage != nil {
+		who = "@" + displayName(m.ReferencedMessage)
+	}
+	return fmt.Sprintf("-# ↪ [replying to %s](https://discord.com/channels/%s/%s/%s)\n", who, gid, cid, r.MessageID)
 }
 
 // webhookFor returns a Geki webhook for the channel, reusing or creating one.
