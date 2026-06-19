@@ -60,8 +60,10 @@ var (
 	// Any :alphanumeric: occurrence anywhere in a message is a candidate tag.
 	tagRe = regexp.MustCompile(`:([a-zA-Z0-9]+):`)
 
-	// Discord emoji names are 2-32 letters/numbers/underscores; we only allow alphanumerics.
-	forceNameRe = regexp.MustCompile(`^[a-zA-Z0-9]{2,32}$`)
+	// The :keyword: a set command pins; alphanumeric, 2-64 chars. (The override's
+	// actual Discord emoji name is hashed in overrideName, so the 32-char emoji
+	// limit doesn't apply here.)
+	forceNameRe = regexp.MustCompile(`^[a-zA-Z0-9]{2,64}$`)
 )
 
 // parseSet validates "!geki set <name> <url>", returning the lowercased name and
@@ -423,7 +425,7 @@ func handleSet(s *discordgo.Session, m *discordgo.MessageCreate, fields []string
 	}
 	name, url, ok := parseSet(fields)
 	if !ok {
-		s.ChannelMessageSend(m.ChannelID, "usage: `"+cmdPrefix+" set <name> <https-png-or-gif-url>` — name letters/numbers (2-32), https only")
+		s.ChannelMessageSend(m.ChannelID, "usage: `"+cmdPrefix+" set <name> <https-png-or-gif-url>` — name letters/numbers (2-64), https only")
 		return
 	}
 	if err := setOverride(s, m.GuildID, name, url); err != nil {
@@ -469,18 +471,34 @@ func onMessage(s *discordgo.Session, m *discordgo.MessageCreate) {
 		log.Printf("delete: %v", err) // missing Manage Messages perm → original stays
 	}
 
-	id, token, err := webhookFor(s, m.ChannelID)
+	whChannel, threadID := webhookTarget(s, m.ChannelID)
+	id, token, err := webhookFor(s, whChannel)
 	if err != nil {
 		reportErr(s, m.ChannelID, "could not create webhook (does Geki have Manage Webhooks?)", err)
 		return
 	}
-	if _, err := s.WebhookExecute(id, token, false, &discordgo.WebhookParams{
+	// threadID == "" outside threads makes this a plain webhook execute.
+	if _, err := s.WebhookThreadExecute(id, token, false, threadID, &discordgo.WebhookParams{
 		Content:   replyPrefix(m) + content,
 		Username:  displayName(m.Message),
 		AvatarURL: m.Author.AvatarURL("128"),
 	}); err != nil {
 		reportErr(s, m.ChannelID, "could not post message", err)
 	}
+}
+
+// webhookTarget maps a message channel to where its webhook lives and the thread
+// to post into. Webhooks can't exist on a thread (forum posts are threads), so we
+// use the parent channel + the thread id. Plain channels return (channelID, "").
+func webhookTarget(s *discordgo.Session, channelID string) (whChannel, threadID string) {
+	ch, err := s.State.Channel(channelID)
+	if err != nil {
+		ch, err = s.Channel(channelID) // not cached → fetch
+	}
+	if err == nil && ch.IsThread() {
+		return ch.ParentID, channelID
+	}
+	return channelID, ""
 }
 
 // reportErr logs to the console and posts the error to the channel.
