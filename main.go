@@ -57,8 +57,10 @@ var (
 	srvMu   sync.Mutex
 	servers = map[string]*serverData{} // guildID -> whitelist + per-guild overrides
 
-	// Any :alphanumeric: occurrence anywhere in a message is a candidate tag.
-	tagRe = regexp.MustCompile(`:([a-zA-Z0-9]+):`)
+	// A bare :alphanumeric: tag anywhere in a message is a candidate. The first
+	// alternative matches a whole existing custom emoji (<:name:id> / <a:name:id>)
+	// so the :name: inside a server's own emoji is consumed and left untouched.
+	tagRe = regexp.MustCompile(`<a?:[a-zA-Z0-9_]+:[0-9]+>|:([a-zA-Z0-9]+):`)
 
 	// The :keyword: a set command pins; alphanumeric, 2-64 chars. (The override's
 	// actual Discord emoji name is hashed in overrideName, so the 32-char emoji
@@ -86,13 +88,16 @@ func parseSet(fields []string) (name, url string, ok bool) {
 // left as-is. Reports whether anything was replaced.
 func replaceTags(content string, resolve func(kw string) (string, bool)) (string, bool) {
 	changed := false
-	out := tagRe.ReplaceAllStringFunc(content, func(tag string) string {
-		kw := strings.ToLower(tag[1 : len(tag)-1])
+	out := tagRe.ReplaceAllStringFunc(content, func(tok string) string {
+		if tok[0] == '<' {
+			return tok // already a custom emoji (e.g. the server's own) — leave it
+		}
+		kw := strings.ToLower(tok[1 : len(tok)-1])
 		if rep, ok := resolve(kw); ok {
 			changed = true
 			return rep
 		}
-		return tag
+		return tok
 	})
 	return out, changed
 }

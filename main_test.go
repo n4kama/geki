@@ -52,6 +52,9 @@ func TestReplaceTags(t *testing.T) {
 		{"just text", "just text", false},                                // nothing to do
 		{"unknown :nope: stays", "unknown :nope: stays", false},          // unresolved tag kept
 		{"mixed :madge: and :nope:", "mixed <:madge:2> and :nope:", true},
+		{"keep <:madge:999> native", "keep <:madge:999> native", false},  // server's own emoji untouched
+		{"keep <a:kappa:9> native", "keep <a:kappa:9> native", false},    // animated native emoji untouched
+		{"native <:madge:9> + tag :madge:", "native <:madge:9> + tag <:madge:2>", true},
 	}
 	for _, c := range cases {
 		got, changed := replaceTags(c.in, resolve)
