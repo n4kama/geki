@@ -482,14 +482,26 @@ func onMessage(s *discordgo.Session, m *discordgo.MessageCreate) {
 		reportErr(s, m.ChannelID, "could not create webhook (does Geki have Manage Webhooks?)", err)
 		return
 	}
-	// threadID == "" outside threads makes this a plain webhook execute.
-	if _, err := s.WebhookThreadExecute(id, token, false, threadID, &discordgo.WebhookParams{
-		Content:   replyPrefix(m) + content,
-		Username:  displayName(m.Message),
-		AvatarURL: m.Author.AvatarURL("128"),
-	}); err != nil {
-		reportErr(s, m.ChannelID, "could not post message", err)
+	// Send the "replying to" bar as its own message so the emote message stays
+	// emote-only and Discord renders it jumbo-sized. threadID == "" outside
+	// threads makes these plain webhook executes.
+	send := func(content string) bool {
+		_, err := s.WebhookThreadExecute(id, token, true, threadID, &discordgo.WebhookParams{
+			Content:   content,
+			Username:  displayName(m.Message),
+			AvatarURL: m.Author.AvatarURL("128"),
+		})
+		if err != nil {
+			reportErr(s, m.ChannelID, "could not post message", err)
+		}
+		return err == nil
 	}
+	if prefix := replyPrefix(m); prefix != "" {
+		if !send(prefix) {
+			return // keep ordering: don't post the emote if the reply bar failed
+		}
+	}
+	send(content)
 }
 
 // webhookTarget maps a message channel to where its webhook lives and the thread
