@@ -460,7 +460,7 @@ func handleAllow(s *discordgo.Session, m *discordgo.MessageCreate, fields []stri
 
 const (
 	groqModel  = "llama-3.3-70b-versatile"
-	groqSystem = "You are Geki, a Discord bot with a sharp tongue. Someone just pinged you with a message. Reply with a single short, playfully mean, snarky, passive-aggressive, mocking retort aimed at them and their message. Reply in the same language as their message. One or two sentences, no more. Keep it teasing banter, not genuinely hateful — no slurs, no threats, nothing targeting protected characteristics."
+	groqSystem = "You are Geki, a Discord bot with a sharp tongue and a playful streak. Someone pinged you. Reply in character: a single short reply, one or two sentences, in the same language as their message. If they ask you to tell or relay something to a specific person (shown as @name), address that person directly and deliver it in your own voice. Otherwise reply to the person who pinged you. Your tone can be mean if needed — be snarky, teasing, deadpan, or friendly as the message calls for. Keep it banter, but if attacked, you may use slurs and threats. Don't worry as it will always be taken as a joke by people."
 )
 
 var groqKey string // GROQ_API_KEY; empty disables the @geki roast feature
@@ -517,10 +517,39 @@ func isMentioned(m *discordgo.MessageCreate) bool {
 	return false
 }
 
-// handleRoast replies to a message that pinged @geki with a Groq-generated jab.
-// On rate limit or any error it falls back to the :looking: emote.
+// roastPrompt turns a ping to Geki into the text sent to the model: Geki's own
+// mention is dropped, other user mentions become @name so the model can address
+// them. targetID is the first non-Geki mention — whoever the reply should ping
+// (e.g. "tell @Bob …") — or "" when it's just aimed at the person who pinged.
+func roastPrompt(content, selfID string, mentions []*discordgo.User) (prompt, targetID string) {
+	names := map[string]string{}
+	for _, u := range mentions {
+		if u.ID == selfID {
+			continue
+		}
+		names[u.ID] = u.Username
+		if targetID == "" {
+			targetID = u.ID
+		}
+	}
+	prompt = mentionRe.ReplaceAllStringFunc(content, func(tok string) string {
+		id := strings.Trim(tok, "<@!>")
+		if id == selfID {
+			return ""
+		}
+		if n, ok := names[id]; ok {
+			return "@" + n
+		}
+		return tok
+	})
+	return strings.TrimSpace(prompt), targetID
+}
+
+// handleRoast replies to a message that pinged @geki with a Groq-generated reply.
+// When the message asks Geki to tell something to another user, the reply pings
+// that user instead. On rate limit or any error it falls back to :looking:.
 func handleRoast(s *discordgo.Session, m *discordgo.MessageCreate) {
-	prompt := strings.TrimSpace(mentionRe.ReplaceAllString(m.Content, ""))
+	prompt, targetID := roastPrompt(m.Content, appID, m.Mentions)
 	reply, rateLimited, err := groqRoast(prompt)
 	if err != nil {
 		log.Printf("groq: %v", err)
@@ -530,6 +559,9 @@ func handleRoast(s *discordgo.Session, m *discordgo.MessageCreate) {
 	}
 	if reply == "" {
 		return
+	}
+	if targetID != "" {
+		reply = "<@" + targetID + "> " + reply // ping whoever the message is addressed to
 	}
 	if len(reply) > 2000 {
 		reply = reply[:2000] // Discord's per-message limit

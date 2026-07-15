@@ -144,6 +144,29 @@ func TestRewriteReddit(t *testing.T) {
 	}
 }
 
+func TestRoastPrompt(t *testing.T) {
+	self := "999"
+	u := func(id, name string) *discordgo.User { return &discordgo.User{ID: id, Username: name} }
+	cases := []struct {
+		content        string
+		mentions       []*discordgo.User
+		prompt, target string
+	}{
+		// just @Geki → aimed at the pinger, no target
+		{"<@999> roast me", []*discordgo.User{u("999", "Geki")}, "roast me", ""},
+		// tell @Bob something → address Bob, ping Bob
+		{"<@999> tell <@111> he is a bad player", []*discordgo.User{u("999", "Geki"), u("111", "Bob")}, "tell @Bob he is a bad player", "111"},
+		// nickname mention form + several people → first non-Geki is the target
+		{"<@!999> hi <@111> and <@222>", []*discordgo.User{u("999", "Geki"), u("111", "Bob"), u("222", "Al")}, "hi @Bob and @Al", "111"},
+	}
+	for _, c := range cases {
+		prompt, target := roastPrompt(c.content, self, c.mentions)
+		if prompt != c.prompt || target != c.target {
+			t.Errorf("roastPrompt(%q) = (%q,%q), want (%q,%q)", c.content, prompt, target, c.prompt, c.target)
+		}
+	}
+}
+
 func TestStripMention(t *testing.T) {
 	cases := []struct{ in, want string }{
 		{"<@123> roast me", "roast me"},
