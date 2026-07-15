@@ -539,6 +539,67 @@ func handleRoast(s *discordgo.Session, m *discordgo.MessageCreate) {
 	}
 }
 
+// Embed-fixing hosts we redirect to. These services die often — swap the one
+// line when one stops working (kkinstagram/ddinstagram, vxtiktok/fixtiktok…).
+const (
+	instaProxy   = "instagram7.com"
+	tiktokProxy  = "d.tnktok.com" // fxTikTok direct mode — raw video, skips the sensitive-content gate
+	xProxy       = "fixupx.com"   // fxTwitter (x.com)
+	twitterProxy = "fxtwitter.com"
+	redditProxy  = "vxreddit.com"
+)
+
+var (
+	// A reel link is what the proxy embeds well; \b so a domain like
+	// instagram7.com/reel (already rewritten) doesn't re-trigger.
+	instaReelRe   = regexp.MustCompile(`(?i)\binstagram\.com/reel`)
+	instaDomainRe = regexp.MustCompile(`(?i)\binstagram\.com`)
+	// Whole host, subdomain and all (www./vm./m./old.…), so it's replaced by the
+	// proxy — not left as e.g. www.d.tnktok.com. \b keeps notiktok.com / fox.com out.
+	tiktokRe  = regexp.MustCompile(`(?i)\b(?:[a-z0-9-]+\.)*tiktok\.com`)
+	xRe       = regexp.MustCompile(`(?i)\b(?:[a-z0-9-]+\.)*x\.com`)
+	twitterRe = regexp.MustCompile(`(?i)\b(?:[a-z0-9-]+\.)*twitter\.com`)
+	redditRe  = regexp.MustCompile(`(?i)\b(?:[a-z0-9-]+\.)*reddit\.com`)
+)
+
+// rewriters each swap a broken-embed host for its proxy, reporting whether they
+// changed anything. onMessage runs them all so one message can fix several links.
+var rewriters = []func(string) (string, bool){rewriteInsta, rewriteTiktok, rewriteTwitter, rewriteReddit}
+
+// rewriteInsta swaps the instagram.com domain for the proxy in messages linking
+// a reel, so Discord embeds it. Reports whether anything changed.
+func rewriteInsta(content string) (string, bool) {
+	if !instaReelRe.MatchString(content) {
+		return content, false
+	}
+	return instaDomainRe.ReplaceAllString(content, instaProxy), true
+}
+
+// rewriteTiktok swaps any tiktok.com host for the proxy so Discord embeds it.
+func rewriteTiktok(content string) (string, bool) {
+	if !tiktokRe.MatchString(content) {
+		return content, false
+	}
+	return tiktokRe.ReplaceAllString(content, tiktokProxy), true
+}
+
+// rewriteTwitter swaps x.com / twitter.com hosts for fxTwitter so videos embed.
+func rewriteTwitter(content string) (string, bool) {
+	if !xRe.MatchString(content) && !twitterRe.MatchString(content) {
+		return content, false
+	}
+	out := xRe.ReplaceAllString(content, xProxy)
+	return twitterRe.ReplaceAllString(out, twitterProxy), true
+}
+
+// rewriteReddit swaps any reddit.com host for the proxy so v.redd.it videos play.
+func rewriteReddit(content string) (string, bool) {
+	if !redditRe.MatchString(content) {
+		return content, false
+	}
+	return redditRe.ReplaceAllString(content, redditProxy), true
+}
+
 func onMessage(s *discordgo.Session, m *discordgo.MessageCreate) {
 	if m.Author.Bot || m.WebhookID != "" || m.GuildID == "" {
 		return // ignore bots, our own webhook posts, and DMs (no server = no override scope)
@@ -554,9 +615,21 @@ func onMessage(s *discordgo.Session, m *discordgo.MessageCreate) {
 	content, changed := replaceTags(m.Content, func(kw string) (string, bool) {
 		return emojiTag(s, m.GuildID, kw)
 	})
+	for _, rw := range rewriters {
+		if out, ok := rw(content); ok {
+			content, changed = out, true
+		}
+	}
 	if !changed {
 		return
 	}
+	repost(s, m, content)
+}
+
+// repost deletes m and re-sends content through Geki's webhook as the author, so
+// a rewritten message (emote expansion, instagram reel links) keeps their name
+// and avatar.
+func repost(s *discordgo.Session, m *discordgo.MessageCreate, content string) {
 	if err := s.ChannelMessageDelete(m.ChannelID, m.ID); err != nil {
 		log.Printf("delete: %v", err) // missing Manage Messages perm → original stays
 	}
@@ -567,7 +640,7 @@ func onMessage(s *discordgo.Session, m *discordgo.MessageCreate) {
 		reportErr(s, m.ChannelID, "could not create webhook (does Geki have Manage Webhooks?)", err)
 		return
 	}
-	// Send the "replying to" bar as its own message so the emote message stays
+	// Send the "replying to" bar as its own message so an emote-only message stays
 	// emote-only and Discord renders it jumbo-sized. threadID == "" outside
 	// threads makes these plain webhook executes.
 	send := func(content string) bool {
@@ -583,7 +656,7 @@ func onMessage(s *discordgo.Session, m *discordgo.MessageCreate) {
 	}
 	if prefix := replyPrefix(m); prefix != "" {
 		if !send(prefix) {
-			return // keep ordering: don't post the emote if the reply bar failed
+			return // keep ordering: don't post the body if the reply bar failed
 		}
 	}
 	send(content)

@@ -64,6 +64,86 @@ func TestReplaceTags(t *testing.T) {
 	}
 }
 
+func TestRewriteInsta(t *testing.T) {
+	cases := []struct {
+		in, want string
+		ok       bool
+	}{
+		{"https://www.instagram.com/reel/abc/", "https://www.instagram7.com/reel/abc/", true},
+		{"look https://instagram.com/reel/xyz nice", "look https://instagram7.com/reel/xyz nice", true},
+		{"https://www.INSTAGRAM.com/reel/abc", "https://www.instagram7.com/reel/abc", true},
+		{"https://instagram.com/p/abc", "https://instagram.com/p/abc", false}, // post, not a reel
+		{"https://www.instagram7.com/reel/abc", "https://www.instagram7.com/reel/abc", false}, // already rewritten
+		{"just text", "just text", false},
+	}
+	for _, c := range cases {
+		got, ok := rewriteInsta(c.in)
+		if got != c.want || ok != c.ok {
+			t.Errorf("rewriteInsta(%q) = (%q,%v), want (%q,%v)", c.in, got, ok, c.want, c.ok)
+		}
+	}
+}
+
+func TestRewriteTiktok(t *testing.T) {
+	cases := []struct {
+		in, want string
+		ok       bool
+	}{
+		{"https://www.tiktok.com/@user/video/123", "https://d.tnktok.com/@user/video/123", true},
+		{"short https://vm.tiktok.com/abc/", "short https://d.tnktok.com/abc/", true},
+		{"https://vt.TIKTOK.com/xyz", "https://d.tnktok.com/xyz", true},
+		{"bare tiktok.com/@u/video/1 link", "bare d.tnktok.com/@u/video/1 link", true},
+		{"https://d.tnktok.com/@u/video/1", "https://d.tnktok.com/@u/video/1", false}, // already rewritten
+		{"a notiktok.com/page url", "a notiktok.com/page url", false},                 // not a tiktok host
+		{"just text", "just text", false},
+	}
+	for _, c := range cases {
+		got, ok := rewriteTiktok(c.in)
+		if got != c.want || ok != c.ok {
+			t.Errorf("rewriteTiktok(%q) = (%q,%v), want (%q,%v)", c.in, got, ok, c.want, c.ok)
+		}
+	}
+}
+
+func TestRewriteTwitter(t *testing.T) {
+	cases := []struct {
+		in, want string
+		ok       bool
+	}{
+		{"https://x.com/u/status/1", "https://fixupx.com/u/status/1", true},
+		{"https://twitter.com/u/status/1", "https://fxtwitter.com/u/status/1", true},
+		{"https://mobile.twitter.com/u/status/1", "https://fxtwitter.com/u/status/1", true},
+		{"https://www.X.com/u/status/1", "https://fixupx.com/u/status/1", true},
+		{"https://fixupx.com/u/status/1", "https://fixupx.com/u/status/1", false}, // already rewritten
+		{"visit fox.com and max.com", "visit fox.com and max.com", false},         // not x.com
+		{"just text", "just text", false},
+	}
+	for _, c := range cases {
+		got, ok := rewriteTwitter(c.in)
+		if got != c.want || ok != c.ok {
+			t.Errorf("rewriteTwitter(%q) = (%q,%v), want (%q,%v)", c.in, got, ok, c.want, c.ok)
+		}
+	}
+}
+
+func TestRewriteReddit(t *testing.T) {
+	cases := []struct {
+		in, want string
+		ok       bool
+	}{
+		{"https://www.reddit.com/r/x/comments/1/t/", "https://vxreddit.com/r/x/comments/1/t/", true},
+		{"https://old.reddit.com/r/x", "https://vxreddit.com/r/x", true},
+		{"https://vxreddit.com/r/x", "https://vxreddit.com/r/x", false}, // already rewritten
+		{"just text", "just text", false},
+	}
+	for _, c := range cases {
+		got, ok := rewriteReddit(c.in)
+		if got != c.want || ok != c.ok {
+			t.Errorf("rewriteReddit(%q) = (%q,%v), want (%q,%v)", c.in, got, ok, c.want, c.ok)
+		}
+	}
+}
+
 func TestStripMention(t *testing.T) {
 	cases := []struct{ in, want string }{
 		{"<@123> roast me", "roast me"},
