@@ -64,6 +64,21 @@ func TestReplaceTags(t *testing.T) {
 	}
 }
 
+func TestStripMention(t *testing.T) {
+	cases := []struct{ in, want string }{
+		{"<@123> roast me", "roast me"},
+		{"<@!123> nickname mention", "nickname mention"},
+		{"hey <@123> what do you think", "hey  what do you think"},
+		{"<@123>", ""},
+		{"no mention here", "no mention here"},
+	}
+	for _, c := range cases {
+		if got := strings.TrimSpace(mentionRe.ReplaceAllString(c.in, "")); got != strings.TrimSpace(c.want) {
+			t.Errorf("strip(%q) = %q, want %q", c.in, got, c.want)
+		}
+	}
+}
+
 func TestPickURL(t *testing.T) {
 	files := []emoteFile{
 		{Name: "2x.gif", Format: "GIF", Height: 64},

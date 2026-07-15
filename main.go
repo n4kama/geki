@@ -409,7 +409,7 @@ func isAdmin(s *discordgo.Session, m *discordgo.MessageCreate) bool {
 
 func handleCommand(s *discordgo.Session, m *discordgo.MessageCreate) {
 	fields := strings.Fields(m.Content)
-	if len(fields) < 2 {
+	if len(fields) < 2 || fields[1] == "help" {
 		s.ChannelMessageSend(m.ChannelID, "commands: `"+cmdPrefix+" set <name> <url>`, `"+cmdPrefix+" allow <username>`")
 		return
 	}
@@ -458,12 +458,97 @@ func handleAllow(s *discordgo.Session, m *discordgo.MessageCreate, fields []stri
 	s.ChannelMessageSend(m.ChannelID, "✅ `"+user+"` can now manage emotes on this server")
 }
 
+const (
+	groqModel  = "llama-3.3-70b-versatile"
+	groqSystem = "You are Geki, a Discord bot with a sharp tongue. Someone just pinged you with a message. Reply with a single short, playfully mean, snarky, passive-aggressive, mocking retort aimed at them and their message. Reply in the same language as their message. One or two sentences, no more. Keep it teasing banter, not genuinely hateful — no slurs, no threats, nothing targeting protected characteristics."
+)
+
+var groqKey string // GROQ_API_KEY; empty disables the @geki roast feature
+
+var mentionRe = regexp.MustCompile(`<@!?[0-9]+>`)
+
+// groqRoast asks Groq for a snarky reply to msg. rateLimited is true only when the
+// free-tier quota is exhausted (HTTP 429); the caller falls back to :looking: then.
+func groqRoast(msg string) (reply string, rateLimited bool, err error) {
+	body, _ := json.Marshal(map[string]any{
+		"model": groqModel,
+		"messages": []map[string]string{
+			{"role": "system", "content": groqSystem},
+			{"role": "user", "content": msg},
+		},
+	})
+	req, _ := http.NewRequest("POST", "https://api.groq.com/openai/v1/chat/completions", bytes.NewReader(body))
+	req.Header.Set("Authorization", "Bearer "+groqKey)
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := safeClient.Do(req)
+	if err != nil {
+		return "", false, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode == http.StatusTooManyRequests {
+		return "", true, nil
+	}
+	if resp.StatusCode != http.StatusOK {
+		b, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
+		return "", false, fmt.Errorf("groq %d: %s", resp.StatusCode, b)
+	}
+	var r struct {
+		Choices []struct {
+			Message struct {
+				Content string `json:"content"`
+			} `json:"message"`
+		} `json:"choices"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&r); err != nil {
+		return "", false, err
+	}
+	if len(r.Choices) == 0 {
+		return "", false, fmt.Errorf("groq: no choices")
+	}
+	return strings.TrimSpace(r.Choices[0].Message.Content), false, nil
+}
+
+func isMentioned(m *discordgo.MessageCreate) bool {
+	for _, u := range m.Mentions {
+		if u.ID == appID {
+			return true
+		}
+	}
+	return false
+}
+
+// handleRoast replies to a message that pinged @geki with a Groq-generated jab.
+// On rate limit or any error it falls back to the :looking: emote.
+func handleRoast(s *discordgo.Session, m *discordgo.MessageCreate) {
+	prompt := strings.TrimSpace(mentionRe.ReplaceAllString(m.Content, ""))
+	reply, rateLimited, err := groqRoast(prompt)
+	if err != nil {
+		log.Printf("groq: %v", err)
+	}
+	if rateLimited || err != nil {
+		reply, _ = emojiTag(s, m.GuildID, "looking") // "" if it can't resolve → send nothing
+	}
+	if reply == "" {
+		return
+	}
+	if len(reply) > 2000 {
+		reply = reply[:2000] // Discord's per-message limit
+	}
+	if _, err := s.ChannelMessageSendReply(m.ChannelID, reply, m.Reference()); err != nil {
+		log.Printf("roast reply: %v", err)
+	}
+}
+
 func onMessage(s *discordgo.Session, m *discordgo.MessageCreate) {
 	if m.Author.Bot || m.WebhookID != "" || m.GuildID == "" {
 		return // ignore bots, our own webhook posts, and DMs (no server = no override scope)
 	}
 	if m.Content == cmdPrefix || strings.HasPrefix(m.Content, cmdPrefix+" ") {
 		handleCommand(s, m)
+		return
+	}
+	if groqKey != "" && isMentioned(m) {
+		handleRoast(s, m)
 		return
 	}
 	content, changed := replaceTags(m.Content, func(kw string) (string, bool) {
@@ -596,6 +681,10 @@ func main() {
 	token := os.Getenv("DISCORD_TOKEN")
 	if token == "" {
 		log.Fatal("set DISCORD_TOKEN")
+	}
+	groqKey = os.Getenv("GROQ_API_KEY")
+	if groqKey == "" {
+		log.Println("GROQ_API_KEY unset — @geki roast replies disabled")
 	}
 	loadServers()
 
