@@ -782,6 +782,22 @@ func cacheWebhook(channelID, id, token string) (string, string) {
 	return id, token
 }
 
+// Discord acks a gateway heartbeat about every 41 s. discordgo can leave a dead
+// session behind without logging anything (2026-09-15), so exit when the acks
+// stop and let systemd restart geki.
+const ackTimeout = 5 * time.Minute
+
+func watchGateway(dg *discordgo.Session) {
+	for range time.Tick(time.Minute) {
+		dg.RLock()
+		age := time.Since(dg.LastHeartbeatAck)
+		dg.RUnlock()
+		if age > ackTimeout {
+			log.Fatalf("no heartbeat ack for %s, exiting", age.Round(time.Second))
+		}
+	}
+}
+
 func main() {
 	token := os.Getenv("DISCORD_TOKEN")
 	if token == "" {
@@ -799,11 +815,14 @@ func main() {
 	}
 	dg.Identify.Intents = discordgo.IntentsGuilds | discordgo.IntentsGuildMessages | discordgo.IntentMessageContent
 	dg.AddHandler(onMessage)
+	dg.AddHandler(func(*discordgo.Session, *discordgo.Connect) { log.Println("gateway connected") })
+	dg.AddHandler(func(*discordgo.Session, *discordgo.Disconnect) { log.Println("gateway disconnected") })
 
 	if err := dg.Open(); err != nil {
 		log.Fatal(err)
 	}
 	defer dg.Close()
+	go watchGateway(dg)
 
 	appID = dg.State.User.ID // for bots, the application ID equals the bot user ID
 	loadAppEmojis(dg)
