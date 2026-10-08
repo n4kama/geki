@@ -43,17 +43,17 @@ func TestReplaceTags(t *testing.T) {
 		want    string
 		changed bool
 	}{
-		{":madge:", "<:madge:2>", true},                                  // whole message
-		{"hello :madge: world", "hello <:madge:2> world", true},          // middle
-		{":kappa: at the start", "<a:kappa:1> at the start", true},       // start, animated
-		{"at the end :madge:", "at the end <:madge:2>", true},            // end
+		{":madge:", "<:madge:2>", true},                            // whole message
+		{"hello :madge: world", "hello <:madge:2> world", true},    // middle
+		{":kappa: at the start", "<a:kappa:1> at the start", true}, // start, animated
+		{"at the end :madge:", "at the end <:madge:2>", true},      // end
 		{":KAPPA: is case-insensitive", "<a:kappa:1> is case-insensitive", true},
 		{"two :madge::kappa: tags", "two <:madge:2><a:kappa:1> tags", true},
-		{"just text", "just text", false},                                // nothing to do
-		{"unknown :nope: stays", "unknown :nope: stays", false},          // unresolved tag kept
+		{"just text", "just text", false},                       // nothing to do
+		{"unknown :nope: stays", "unknown :nope: stays", false}, // unresolved tag kept
 		{"mixed :madge: and :nope:", "mixed <:madge:2> and :nope:", true},
-		{"keep <:madge:999> native", "keep <:madge:999> native", false},  // server's own emoji untouched
-		{"keep <a:kappa:9> native", "keep <a:kappa:9> native", false},    // animated native emoji untouched
+		{"keep <:madge:999> native", "keep <:madge:999> native", false}, // server's own emoji untouched
+		{"keep <a:kappa:9> native", "keep <a:kappa:9> native", false},   // animated native emoji untouched
 		{"native <:madge:9> + tag :madge:", "native <:madge:9> + tag <:madge:2>", true},
 	}
 	for _, c := range cases {
@@ -69,11 +69,11 @@ func TestRewriteInsta(t *testing.T) {
 		in, want string
 		ok       bool
 	}{
-		{"https://www.instagram.com/reel/abc/", "https://www.instagram7.com/reel/abc/", true},
-		{"look https://instagram.com/reel/xyz nice", "look https://instagram7.com/reel/xyz nice", true},
-		{"https://www.INSTAGRAM.com/reel/abc", "https://www.instagram7.com/reel/abc", true},
-		{"https://instagram.com/p/abc", "https://instagram.com/p/abc", false}, // post, not a reel
-		{"https://www.instagram7.com/reel/abc", "https://www.instagram7.com/reel/abc", false}, // already rewritten
+		{"https://www.instagram.com/reel/abc/", "https://www.kkinstagram.com/reel/abc/", true},
+		{"look https://instagram.com/reel/xyz nice", "look https://kkinstagram.com/reel/xyz nice", true},
+		{"https://www.INSTAGRAM.com/reel/abc", "https://www.kkinstagram.com/reel/abc", true},
+		{"https://instagram.com/p/abc", "https://instagram.com/p/abc", false},                   // post, not a reel
+		{"https://www.kkinstagram.com/reel/abc", "https://www.kkinstagram.com/reel/abc", false}, // already rewritten
 		{"just text", "just text", false},
 	}
 	for _, c := range cases {
@@ -209,9 +209,9 @@ func TestParseSet(t *testing.T) {
 	}{
 		{"!geki set Madge https://x/y.png", "madge", "https://x/y.png", true},
 		{"!geki set catkiss https://x/y.gif", "catkiss", "https://x/y.gif", true},
-		{"!geki set madge http://x/y.png", "", "", false},  // http not allowed
-		{"!geki set madge", "", "", false},                 // missing url
-		{"!geki set madge a b", "", "", false},             // too many fields
+		{"!geki set madge http://x/y.png", "", "", false},    // http not allowed
+		{"!geki set madge", "", "", false},                   // missing url
+		{"!geki set madge a b", "", "", false},               // too many fields
 		{"!geki allow madge https://x/y.png", "", "", false}, // not a set command
 		{"!nope set madge https://x/y.png", "", "", false},   // wrong prefix
 		{"!geki set mad_ge https://x/y.png", "", "", false},  // underscore not allowed

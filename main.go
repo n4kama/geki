@@ -572,9 +572,9 @@ func handleRoast(s *discordgo.Session, m *discordgo.MessageCreate) {
 }
 
 // Embed-fixing hosts we redirect to. These services die often — swap the one
-// line when one stops working (kkinstagram/ddinstagram, vxtiktok/fixtiktok…).
+// line when one stops working (instagram7/ddinstagram, vxtiktok/fixtiktok…).
 const (
-	instaProxy   = "instagram7.com"
+	instaProxy   = "kkinstagram.com"
 	tiktokProxy  = "d.tnktok.com" // fxTikTok direct mode — raw video, skips the sensitive-content gate
 	xProxy       = "fixupx.com"   // fxTwitter (x.com)
 	twitterProxy = "fxtwitter.com"
@@ -583,7 +583,7 @@ const (
 
 var (
 	// A reel link is what the proxy embeds well; \b so a domain like
-	// instagram7.com/reel (already rewritten) doesn't re-trigger.
+	// kkinstagram.com/reel (already rewritten) doesn't re-trigger.
 	instaReelRe   = regexp.MustCompile(`(?i)\binstagram\.com/reel`)
 	instaDomainRe = regexp.MustCompile(`(?i)\binstagram\.com`)
 	// Whole host, subdomain and all (www./vm./m./old.…), so it's replaced by the
