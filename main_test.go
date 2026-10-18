@@ -65,13 +65,15 @@ func TestReplaceTags(t *testing.T) {
 }
 
 func TestRewriteInsta(t *testing.T) {
+	defer func(f func(string) bool) { embedsVideo = f }(embedsVideo)
+	embedsVideo = func(string) bool { return false } // none work → first proxy
 	cases := []struct {
 		in, want string
 		ok       bool
 	}{
-		{"https://www.instagram.com/reel/abc/", "https://www.kkinstagram.com/reel/abc/", true},
-		{"look https://instagram.com/reel/xyz nice", "look https://kkinstagram.com/reel/xyz nice", true},
-		{"https://www.INSTAGRAM.com/reel/abc", "https://www.kkinstagram.com/reel/abc", true},
+		{"https://www.instagram.com/reel/abc/", "https://www.kirkstagram.com/reel/abc/", true},
+		{"look https://instagram.com/reel/xyz nice", "look https://kirkstagram.com/reel/xyz nice", true},
+		{"https://www.INSTAGRAM.com/reel/abc", "https://www.kirkstagram.com/reel/abc", true},
 		{"https://instagram.com/p/abc", "https://instagram.com/p/abc", false},                   // post, not a reel
 		{"https://www.kkinstagram.com/reel/abc", "https://www.kkinstagram.com/reel/abc", false}, // already rewritten
 		{"just text", "just text", false},
@@ -81,6 +83,20 @@ func TestRewriteInsta(t *testing.T) {
 		if got != c.want || ok != c.ok {
 			t.Errorf("rewriteInsta(%q) = (%q,%v), want (%q,%v)", c.in, got, ok, c.want, c.ok)
 		}
+	}
+
+	var probed []string
+	embedsVideo = func(url string) bool {
+		probed = append(probed, url)
+		return strings.HasPrefix(url, "https://kkinstagram.com/")
+	}
+	got, _ := rewriteInsta("https://www.instagram.com/reels/abc-1_x/?igsh=q")
+	if want := "https://www.kkinstagram.com/reels/abc-1_x/?igsh=q"; got != want {
+		t.Errorf("rewriteInsta = %q, want %q", got, want)
+	}
+	wantProbed := []string{"https://kirkstagram.com/reels/abc-1_x", "https://instagramfix.com/reels/abc-1_x", "https://kkinstagram.com/reels/abc-1_x"}
+	if strings.Join(probed, " ") != strings.Join(wantProbed, " ") {
+		t.Errorf("probed %v, want %v", probed, wantProbed)
 	}
 }
 

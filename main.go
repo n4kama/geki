@@ -572,19 +572,23 @@ func handleRoast(s *discordgo.Session, m *discordgo.MessageCreate) {
 }
 
 // Embed-fixing hosts we redirect to. These services die often — swap the one
-// line when one stops working (instagram7/ddinstagram, vxtiktok/fixtiktok…).
+// line when one stops working (vxtiktok/fixtiktok…). Instagram ones die the most,
+// so instaProxies is probed per reel instead.
 const (
-	instaProxy   = "kkinstagram.com"
 	tiktokProxy  = "d.tnktok.com" // fxTikTok direct mode — raw video, skips the sensitive-content gate
 	xProxy       = "fixupx.com"   // fxTwitter (x.com)
 	twitterProxy = "fxtwitter.com"
 	redditProxy  = "vxreddit.com"
 )
 
+// instaProxies are tried in order; a reel goes to the first one that embeds it.
+var instaProxies = []string{"kirkstagram.com", "instagramfix.com", "kkinstagram.com"}
+
 var (
 	// A reel link is what the proxy embeds well; \b so a domain like
-	// kkinstagram.com/reel (already rewritten) doesn't re-trigger.
-	instaReelRe   = regexp.MustCompile(`(?i)\binstagram\.com/reel`)
+	// kkinstagram.com/reel (already rewritten) doesn't re-trigger. The group is
+	// the path probed on each proxy.
+	instaReelRe   = regexp.MustCompile(`(?i)\binstagram\.com/(reels?/[\w-]+)`)
 	instaDomainRe = regexp.MustCompile(`(?i)\binstagram\.com`)
 	// Whole host, subdomain and all (www./vm./m./old.…), so it's replaced by the
 	// proxy — not left as e.g. www.d.tnktok.com. \b keeps notiktok.com / fox.com out.
@@ -601,10 +605,49 @@ var rewriters = []func(string) (string, bool){rewriteInsta, rewriteTiktok, rewri
 // rewriteInsta swaps the instagram.com domain for the proxy in messages linking
 // a reel, so Discord embeds it. Reports whether anything changed.
 func rewriteInsta(content string) (string, bool) {
-	if !instaReelRe.MatchString(content) {
+	m := instaReelRe.FindStringSubmatch(content)
+	if m == nil {
 		return content, false
 	}
-	return instaDomainRe.ReplaceAllString(content, instaProxy), true
+	return instaDomainRe.ReplaceAllString(content, pickInstaProxy(m[1])), true
+}
+
+// pickInstaProxy returns the first proxy that embeds the reel at path, or the
+// first proxy when none do (Discord may still manage on its own retry).
+func pickInstaProxy(path string) string {
+	for _, p := range instaProxies {
+		if embedsVideo("https://" + p + "/" + path) {
+			return p
+		}
+	}
+	return instaProxies[0]
+}
+
+var probeClient = &http.Client{Timeout: 8 * time.Second}
+
+// embedsVideo reports whether url, fetched as Discord's crawler, serves what
+// Discord needs to play the video: an og:video tag or the video itself. Dead
+// proxies often answer 200 with an error page, so the status alone proves
+// nothing. A var so tests can stub out the network.
+var embedsVideo = func(url string) bool {
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return false
+	}
+	req.Header.Set("User-Agent", "Mozilla/5.0 (compatible; Discordbot/2.0; +https://discordapp.com)")
+	resp, err := probeClient.Do(req)
+	if err != nil {
+		return false
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return false
+	}
+	if strings.HasPrefix(resp.Header.Get("Content-Type"), "video/") {
+		return true
+	}
+	body, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	return bytes.Contains(body, []byte("og:video"))
 }
 
 // rewriteTiktok swaps any tiktok.com host for the proxy so Discord embeds it.
