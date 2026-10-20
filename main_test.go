@@ -65,8 +65,8 @@ func TestReplaceTags(t *testing.T) {
 }
 
 func TestRewriteInsta(t *testing.T) {
-	defer func(f func(string) bool) { embedsVideo = f }(embedsVideo)
-	embedsVideo = func(string) bool { return false } // none work → first proxy
+	defer func(f func(string) bool) { embeds = f }(embeds)
+	embeds = func(string) bool { return false } // none work → first proxy
 	cases := []struct {
 		in, want string
 		ok       bool
@@ -74,7 +74,8 @@ func TestRewriteInsta(t *testing.T) {
 		{"https://www.instagram.com/reel/abc/", "https://www.kirkstagram.com/reel/abc/", true},
 		{"look https://instagram.com/reel/xyz nice", "look https://kirkstagram.com/reel/xyz nice", true},
 		{"https://www.INSTAGRAM.com/reel/abc", "https://www.kirkstagram.com/reel/abc", true},
-		{"https://instagram.com/p/abc", "https://instagram.com/p/abc", false},                   // post, not a reel
+		{"https://instagram.com/p/abc/?cplk=x", "https://kirkstagram.com/p/abc/?cplk=x", true},
+		{"https://instagram.com/stories/abc", "https://instagram.com/stories/abc", false},       // neither reel nor post
 		{"https://www.kkinstagram.com/reel/abc", "https://www.kkinstagram.com/reel/abc", false}, // already rewritten
 		{"just text", "just text", false},
 	}
@@ -86,7 +87,7 @@ func TestRewriteInsta(t *testing.T) {
 	}
 
 	var probed []string
-	embedsVideo = func(url string) bool {
+	embeds = func(url string) bool {
 		probed = append(probed, url)
 		return strings.HasPrefix(url, "https://kkinstagram.com/")
 	}

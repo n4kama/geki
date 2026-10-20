@@ -573,7 +573,7 @@ func handleRoast(s *discordgo.Session, m *discordgo.MessageCreate) {
 
 // Embed-fixing hosts we redirect to. These services die often — swap the one
 // line when one stops working (vxtiktok/fixtiktok…). Instagram ones die the most,
-// so instaProxies is probed per reel instead.
+// so instaProxies is probed per post instead.
 const (
 	tiktokProxy  = "d.tnktok.com" // fxTikTok direct mode — raw video, skips the sensitive-content gate
 	xProxy       = "fixupx.com"   // fxTwitter (x.com)
@@ -581,14 +581,14 @@ const (
 	redditProxy  = "vxreddit.com"
 )
 
-// instaProxies are tried in order; a reel goes to the first one that embeds it.
+// instaProxies are tried in order; a post goes to the first one that embeds it.
 var instaProxies = []string{"kirkstagram.com", "instagramfix.com", "kkinstagram.com"}
 
 var (
-	// A reel link is what the proxy embeds well; \b so a domain like
+	// Reels and posts (/p/: photos, carousels, videos); \b so a domain like
 	// kkinstagram.com/reel (already rewritten) doesn't re-trigger. The group is
 	// the path probed on each proxy.
-	instaReelRe   = regexp.MustCompile(`(?i)\binstagram\.com/(reels?/[\w-]+)`)
+	instaPostRe   = regexp.MustCompile(`(?i)\binstagram\.com/((?:reels?|p)/[\w-]+)`)
 	instaDomainRe = regexp.MustCompile(`(?i)\binstagram\.com`)
 	// Whole host, subdomain and all (www./vm./m./old.…), so it's replaced by the
 	// proxy — not left as e.g. www.d.tnktok.com. \b keeps notiktok.com / fox.com out.
@@ -603,20 +603,20 @@ var (
 var rewriters = []func(string) (string, bool){rewriteInsta, rewriteTiktok, rewriteTwitter, rewriteReddit}
 
 // rewriteInsta swaps the instagram.com domain for the proxy in messages linking
-// a reel, so Discord embeds it. Reports whether anything changed.
+// a reel or post, so Discord embeds it. Reports whether anything changed.
 func rewriteInsta(content string) (string, bool) {
-	m := instaReelRe.FindStringSubmatch(content)
+	m := instaPostRe.FindStringSubmatch(content)
 	if m == nil {
 		return content, false
 	}
 	return instaDomainRe.ReplaceAllString(content, pickInstaProxy(m[1])), true
 }
 
-// pickInstaProxy returns the first proxy that embeds the reel at path, or the
+// pickInstaProxy returns the first proxy that embeds the post at path, or the
 // first proxy when none do (Discord may still manage on its own retry).
 func pickInstaProxy(path string) string {
 	for _, p := range instaProxies {
-		if embedsVideo("https://" + p + "/" + path) {
+		if embeds("https://" + p + "/" + path) {
 			return p
 		}
 	}
@@ -625,11 +625,12 @@ func pickInstaProxy(path string) string {
 
 var probeClient = &http.Client{Timeout: 8 * time.Second}
 
-// embedsVideo reports whether url, fetched as Discord's crawler, serves what
-// Discord needs to play the video: an og:video tag or the video itself. Dead
-// proxies often answer 200 with an error page, so the status alone proves
-// nothing. A var so tests can stub out the network.
-var embedsVideo = func(url string) bool {
+// embeds reports whether url, fetched as Discord's crawler, serves what Discord
+// needs to embed it: the video itself, an og:video tag for a reel, or an
+// og:image tag for a post (photo posts have no video). Dead proxies often
+// answer 200 with an error page, so the status alone proves nothing. A var so
+// tests can stub out the network.
+var embeds = func(url string) bool {
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
 		return false
@@ -647,7 +648,11 @@ var embedsVideo = func(url string) bool {
 		return true
 	}
 	body, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
-	return bytes.Contains(body, []byte("og:video"))
+	tag := "og:video"
+	if strings.Contains(url, "/p/") {
+		tag = "og:image"
+	}
+	return bytes.Contains(body, []byte(tag))
 }
 
 // rewriteTiktok swaps any tiktok.com host for the proxy so Discord embeds it.
@@ -702,7 +707,7 @@ func onMessage(s *discordgo.Session, m *discordgo.MessageCreate) {
 }
 
 // repost deletes m and re-sends content through Geki's webhook as the author, so
-// a rewritten message (emote expansion, instagram reel links) keeps their name
+// a rewritten message (emote expansion, instagram links) keeps their name
 // and avatar.
 func repost(s *discordgo.Session, m *discordgo.MessageCreate, content string) {
 	if err := s.ChannelMessageDelete(m.ChannelID, m.ID); err != nil {
